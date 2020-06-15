@@ -96,6 +96,7 @@ sealed trait Vector extends Serializable {
 
   /**
    * Gets the value of the ith element.
+   *
    * @param i index
    */
   @Since("2.0.0")
@@ -206,9 +207,9 @@ object Vectors {
   /**
    * Creates a sparse vector providing its index array and value array.
    *
-   * @param size vector size.
+   * @param size    vector size.
    * @param indices index array, must be strictly increasing.
-   * @param values value array, must have the same length as indices.
+   * @param values  value array, must have the same length as indices.
    */
   @Since("2.0.0")
   def sparse(size: Int, indices: Array[Int], values: Array[Double]): Vector =
@@ -217,7 +218,7 @@ object Vectors {
   /**
    * Creates a sparse vector using unordered (index, value) pairs.
    *
-   * @param size vector size.
+   * @param size     vector size.
    * @param elements vector elements in (index, value) pairs.
    */
   @Since("2.0.0")
@@ -229,7 +230,7 @@ object Vectors {
   /**
    * Creates a sparse vector using unordered (index, value) pairs in a Java friendly way.
    *
-   * @param size vector size.
+   * @param size     vector size.
    * @param elements vector elements in (index, value) pairs.
    */
   @Since("2.0.0")
@@ -259,7 +260,7 @@ object Vectors {
         if (v.offset == 0 && v.stride == 1 && v.length == v.data.length) {
           new DenseVector(v.data)
         } else {
-          new DenseVector(v.toArray)  // Can't use underlying array directly, so make a new one
+          new DenseVector(v.toArray) // Can't use underlying array directly, so make a new one
         }
       case v: BSV[Double] =>
         if (v.index.length == v.used) {
@@ -274,8 +275,9 @@ object Vectors {
 
   /**
    * Returns the p-norm of this vector.
+   *
    * @param vector input vector.
-   * @param p norm.
+   * @param p      norm.
    * @return norm in L^p^ space.
    */
   @Since("2.0.0")
@@ -327,6 +329,7 @@ object Vectors {
 
   /**
    * Returns the squared distance between two Vectors.
+   *
    * @param v1 first Vector.
    * @param v2 second Vector.
    * @return squared distance between two Vectors.
@@ -418,10 +421,10 @@ object Vectors {
    * Check equality between sparse/dense vectors
    */
   private[ml] def equals(
-      v1Indices: IndexedSeq[Int],
-      v1Values: Array[Double],
-      v2Indices: IndexedSeq[Int],
-      v2Values: Array[Double]): Boolean = {
+                          v1Indices: IndexedSeq[Int],
+                          v1Values: Array[Double],
+                          v2Indices: IndexedSeq[Int],
+                          v2Values: Array[Double]): Boolean = {
     val v1Size = v1Values.length
     val v2Size = v2Values.length
     var k1 = 0
@@ -449,7 +452,7 @@ object Vectors {
  * A dense vector represented by a value array.
  */
 @Since("2.0.0")
-class DenseVector @Since("2.0.0") ( @Since("2.0.0") val values: Array[Double]) extends Vector {
+class DenseVector @Since("2.0.0")(@Since("2.0.0") val values: Array[Double]) extends Vector {
 
   override def size: Int = values.length
 
@@ -553,15 +556,16 @@ object DenseVector {
 /**
  * A sparse vector represented by an index array and a value array.
  *
- * @param size size of the vector.
+ * @param size    size of the vector.
  * @param indices index array, assume to be strictly increasing.
- * @param values value array, must have the same length as the index array.
+ * @param values  value array, must have the same length as the index array.
  */
 @Since("2.0.0")
-class SparseVector @Since("2.0.0") (
-    override val size: Int,
-    @Since("2.0.0") val indices: Array[Int],
-    @Since("2.0.0") val values: Array[Double]) extends Vector {
+class SparseVector @Since("2.0.0")(
+                                    override val size: Int,
+                                    @Since("2.0.0") val indices: Array[Int],
+                                    @Since("2.0.0") val values: Array[Double],
+                                    val defaultValue: Double) extends Vector {
 
   // validate the data
   {
@@ -587,7 +591,7 @@ class SparseVector @Since("2.0.0") (
     s"($size,${indices.mkString("[", ",", "]")},${values.mkString("[", ",", "]")})"
 
   override def toArray: Array[Double] = {
-    val data = new Array[Double](size)
+    val data = Array.fill[Double](size)(defaultValue)
     var i = 0
     val nnz = indices.length
     while (i < nnz) {
@@ -598,10 +602,10 @@ class SparseVector @Since("2.0.0") (
   }
 
   override def copy: SparseVector = {
-    new SparseVector(size, indices.clone(), values.clone())
+    new SparseVector(size, indices.clone(), values.clone(), defaultValue)
   }
 
-  private[spark] override def asBreeze: BV[Double] = new BSV[Double](indices, values, size)
+  private[spark] override def asBreeze: BV[Double] = new BDV(toArray)
 
   override def foreachActive(f: (Int, Double) => Unit): Unit = {
     var i = 0
@@ -624,7 +628,7 @@ class SparseVector @Since("2.0.0") (
     var nnz = 0
     while (k < end && nnz < Vectors.MAX_HASH_NNZ) {
       val v = values(k)
-      if (v != 0.0) {
+      if (v != defaultValue) {
         val i = indices(k)
         result = 31 * result + i
         val bits = java.lang.Double.doubleToLongBits(v)
@@ -640,7 +644,7 @@ class SparseVector @Since("2.0.0") (
 
   override def numNonzeros: Int = {
     var nnz = 0
-    values.foreach { v =>
+    toArray.foreach { v =>
       if (v != 0.0) {
         nnz += 1
       }
@@ -656,13 +660,13 @@ class SparseVector @Since("2.0.0") (
       val vv = new Array[Double](nnz)
       var k = 0
       foreachActive { (i, v) =>
-        if (v != 0.0) {
+        if (v != defaultValue) {
           ii(k) = i
           vv(k) = v
           k += 1
         }
       }
-      new SparseVector(size, ii, vv)
+      new SparseVector(size, ii, vv, defaultValue)
     }
   }
 
@@ -715,12 +719,13 @@ class SparseVector @Since("2.0.0") (
 
   /**
    * Create a slice of this vector based on the given indices.
+   *
    * @param selectedIndices Unsorted list of indices into the vector.
    *                        This does NOT do bound checking.
-   * @return  New SparseVector with values in the order specified by the given indices.
+   * @return New SparseVector with values in the order specified by the given indices.
    *
-   * NOTE: The API needs to be discussed before making this public.
-   *       Also, if we have a version assuming indices are sorted, we should optimize it.
+   *         NOTE: The API needs to be discussed before making this public.
+   *         Also, if we have a version assuming indices are sorted, we should optimize it.
    */
   private[spark] def slice(selectedIndices: Array[Int]): SparseVector = {
     var currentIdx = 0
